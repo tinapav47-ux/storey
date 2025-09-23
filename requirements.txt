@@ -1,0 +1,5 @@
+python-telegram-bot==20.4
+aiohttp==3.9.5
+aiofiles==23.1.0
+playwright==1.43.0
+Pillow==10.0.1
