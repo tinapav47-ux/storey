@@ -58,10 +58,10 @@ USER_AGENTS = [
 ]
 
 BASE_SITE = "https://insta-stories.ru"
-TIMEOUT_GOTO = 30000
-TIMEOUT_WAIT_STORY = 10000
+TIMEOUT_GOTO = 60000  # Увеличено до 60 секунд для загрузки страницы
+TIMEOUT_WAIT_STORY = 30000  # Увеличено до 30 секунд для ожидания .story элементов
 
-# --- Команда /start ---
+# --- Команда /view ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     WAITING_FOR_USERNAME.add(chat_id)
@@ -80,7 +80,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     WAITING_FOR_USERNAME.remove(chat_id)
 
- # Тут запускаем скачивание
+    # Запускаем скачивание
     await fetch_and_save(username, chat_id, context)
 
 
@@ -138,11 +138,12 @@ async def fetch_media_links(username: str, chat_id: int, context: ContextTypes.D
             await page.goto(url, timeout=TIMEOUT_GOTO)
         except Exception as e:
             print(f"[ERROR] Ошибка при загрузке страницы: {e}")
+            await context.bot.send_message(chat_id=chat_id, text="Ошибка при загрузке страницы. Попробуйте позже.")
             await browser.close()
             return found
 
-            # --- Проверка на текст в div.tab-content > p.text-center ---
-        try: # ждём появления хотя бы одного p.text-center внутри div.tab-content (макс. 5 секунд)
+        # --- Проверка на текст в div.tab-content > p.text-center ---
+        try:  # ждём появления хотя бы одного p.text-center внутри div.tab-content (макс. 5 секунд)
             text_el = await page.wait_for_selector("div.tab-content p.text-center", timeout=5000)
             print(f"[INFO] Проверка на текст в div.tab-content 1")
             if text_el:
@@ -158,13 +159,14 @@ async def fetch_media_links(username: str, chat_id: int, context: ContextTypes.D
             pass
         except Exception as e:
             print(f"[ERROR] Ошибка при проверке текста: {e}")
-            # --- Проверка на текст в div.tab-content > p.text-center ---
+            await context.bot.send_message(chat_id=chat_id, text="Ошибка при проверке страницы. Попробуйте позже.")
 
         # --- Проверка сторис ---
         try:
             await page.wait_for_selector(".story", timeout=TIMEOUT_WAIT_STORY)
         except PlaywrightTimeoutError:
             print("[ERROR] Таймаут при загрузке страницы или отсутствуют .story элементы.")
+            await context.bot.send_message(chat_id=chat_id, text="Таймаут или сторис не найдены. Попробуйте позже.")
             await browser.close()
             return found
 
@@ -199,7 +201,7 @@ async def fetch_media_links(username: str, chat_id: int, context: ContextTypes.D
                     if not source_el:
                         try:
                             source_el = await page.wait_for_selector('source[type="video/mp4"]',
-                                                                     timeout=15000, state="attached")
+                                                                     timeout=30000, state="attached")  # Увеличено до 30 секунд
                         except PlaywrightTimeoutError:
                             source_el = None
 
@@ -242,8 +244,8 @@ async def fetch_media_links(username: str, chat_id: int, context: ContextTypes.D
 
 
 def prepare_folder(folder: str):
-        if not os.path.exists(folder):
-            os.makedirs(folder)
+    if not os.path.exists(folder):
+        os.makedirs(folder)
 
 
 # ---------- Главная логика ----------
@@ -251,6 +253,7 @@ async def fetch_and_save(username: str, chat_id: int, context: ContextTypes.DEFA
     media = await fetch_media_links(username, chat_id, context)
     if not media:
         print("[INFO] Медиа не найдено или произошла ошибка.")
+        await context.bot.send_message(chat_id=chat_id, text="Медиа не найдено или произошла ошибка.")
         return
 
     folder = username
@@ -286,11 +289,11 @@ async def fetch_and_save(username: str, chat_id: int, context: ContextTypes.DEFA
 
     print(f"[DONE] Скачано файлов: {saved_count}")
 
-   # --- Отправка файлов пользователю ---
+    # --- Отправка файлов пользователю ---
     await send_media_from_folder(chat_id, folder, context)
 
 
-   # --- Собираем файлы для отрпавки ---
+# --- Собираем файлы для отправки ---
 async def send_media_from_folder(chat_id: int, folder: str, context):
     if not os.path.exists(folder):
         await context.bot.send_message(chat_id=chat_id, text="Папка с медиа не найдена.")
